@@ -54,9 +54,11 @@ func (d *Decompressor) Close() {
 	d.handle = nil
 }
 
+type DistanceFuncInt func(x0, x1, y0, y1 int) int
+
 // SuggestScaling reads the jpeg data and finds the closest possible scaling that is
 // supported by turbojpeg
-func SuggestScaling(jpegData []byte, wantW, wantH int) (actualW, actualH int, err error) {
+func SuggestScaling(jpegData []byte, wantW, wantH int, dist DistanceFuncInt) (actualW, actualH int, err error) {
 	cfg, err := jpeg.DecodeConfig(bytes.NewReader(jpegData))
 	if err != nil {
 		return 0, 0, err
@@ -71,7 +73,7 @@ func SuggestScaling(jpegData []byte, wantW, wantH int) (actualW, actualH int, er
 	for _, r := range ratios {
 		w := cfg.Width * r.num / r.denom
 		h := cfg.Height * r.num / r.denom
-		dist := abs(w-wantW) + abs(h-wantH)
+		dist := dist(wantW, w, wantH, h)
 		if dist < bestDist {
 			bestDist = dist
 			actualW, actualH = w, h
@@ -87,4 +89,8 @@ func abs(n int) int {
 		return -n
 	}
 	return n
+}
+
+func Manhattan(x0, x1, y0, y1 int) int {
+	return abs(x1-x0) + abs(y1-y0)
 }
