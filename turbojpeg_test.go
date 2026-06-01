@@ -59,7 +59,7 @@ func TestNoPanicOnClose(t *testing.T) {
 }
 
 func TestSuggestScaling_ZeroScalingOnInvalidBytes(t *testing.T) {
-	width, height, err := SuggestScaling([]byte("not jpeg"), 640, 480)
+	width, height, err := SuggestScaling([]byte("not jpeg"), 640, 480, Manhattan)
 	require.Equal(t, width, 0)
 	require.Equal(t, height, 0)
 	require.Error(t, err)
@@ -75,7 +75,7 @@ func TestSuggestScaling(t *testing.T) {
 	err := jpeg.Encode(&jpegBuf, img, nil)
 	require.NoError(t, err)
 
-	width, height, err := SuggestScaling(jpegBuf.Bytes(), 64, 64)
+	width, height, err := SuggestScaling(jpegBuf.Bytes(), 64, 64, Manhattan)
 	require.NoError(t, err)
 
 	// Closest supported ratio should be 1/8
