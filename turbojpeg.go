@@ -34,7 +34,7 @@ func (d *Decompressor) DecompressJpegToYuv(jpegData []byte, dstWidth, dstHeight 
 		C.ulong(len(jpegData)),
 		(*C.uchar)(unsafe.Pointer(&buf[0])),
 		C.int(dstWidth),
-		4,
+		1,
 		C.int(dstHeight),
 		C.TJFLAG_FASTDCT,
 	)
