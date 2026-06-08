@@ -27,8 +27,29 @@ func New() (*Decompressor, error) {
 }
 
 func (d *Decompressor) DecompressJpegToYuv(jpegData []byte, dstWidth, dstHeight int) ([]byte, error) {
-	buf := make([]byte, dstWidth*dstHeight*3/2)
-	returnCode := C.tjDecompressToYUV2(
+	var imgWidth, imgHeight, subsamp, colorspace C.int
+	returnCode := C.tjDecompressHeader3(
+		d.handle,
+		(*C.uchar)(unsafe.Pointer(&jpegData[0])),
+		C.ulong(len(jpegData)),
+		&imgWidth,
+		&imgHeight,
+		&subsamp,
+		&colorspace,
+	)
+	if returnCode != 0 {
+		errStr := C.GoString(C.tjGetErrorStr())
+		return nil, fmt.Errorf("could not read jpeg header: %s", errStr)
+	}
+
+	bufSize := C.tjBufSizeYUV2(C.int(dstWidth), 1, C.int(dstHeight), subsamp)
+	if bufSize == 0 {
+		errStr := C.GoString(C.tjGetErrorStr())
+		return nil, fmt.Errorf("could not compute yuv buffer size: %s", errStr)
+	}
+
+	buf := make([]byte, bufSize)
+	returnCode = C.tjDecompressToYUV2(
 		d.handle,
 		(*C.uchar)(unsafe.Pointer(&jpegData[0])),
 		C.ulong(len(jpegData)),
@@ -42,6 +63,27 @@ func (d *Decompressor) DecompressJpegToYuv(jpegData []byte, dstWidth, dstHeight 
 	if returnCode != 0 {
 		errStr := C.GoString(C.tjGetErrorStr())
 		return nil, fmt.Errorf("could not decompress jpeg to yuv: %s", errStr)
+	}
+	return buf, nil
+}
+
+func (d *Decompressor) DecompressJpegToRGB(jpegData []byte, dstWidth, dstHeight int) ([]byte, error) {
+	pitch := dstWidth * 4
+	buf := make([]byte, pitch*dstHeight)
+	returnCode := C.tjDecompress2(
+		d.handle,
+		(*C.uchar)(unsafe.Pointer(&jpegData[0])),
+		C.ulong(len(jpegData)),
+		(*C.uchar)(unsafe.Pointer(&buf[0])),
+		C.int(dstWidth),
+		C.int(pitch),
+		C.int(dstHeight),
+		C.TJPF_RGBA,
+		C.TJFLAG_FASTDCT,
+	)
+	if returnCode != 0 {
+		errStr := C.GoString(C.tjGetErrorStr())
+		return nil, fmt.Errorf("could not decompress jpeg to rgb: %s", errStr)
 	}
 	return buf, nil
 }
