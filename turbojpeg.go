@@ -4,12 +4,16 @@ package turbojpeg
 #cgo LDFLAGS: -lturbojpeg
 #include <turbojpeg.h>
 #include <stdlib.h>
+
+// Wraps the TJSCALED macro so it's callable from Go
+static int go_tjscaled(int dim, int num, int denom) {
+    tjscalingfactor f = {num, denom};
+    return TJSCALED(dim, f);
+}
 */
 import "C"
 import (
-	"bytes"
 	"fmt"
-	"image/jpeg"
 	"math"
 	"unsafe"
 )
@@ -101,26 +105,52 @@ type DistanceFuncInt func(x0, x1, y0, y1 int) int
 // SuggestScaling reads the jpeg data and finds the closest possible scaling that is
 // supported by turbojpeg
 func SuggestScaling(jpegData []byte, wantW, wantH int, dist DistanceFuncInt) (actualW, actualH int, err error) {
-	cfg, err := jpeg.DecodeConfig(bytes.NewReader(jpegData))
+	var imgWidth, imgHeight, subsamp, colorspace C.int
+
+	d, err := New()
 	if err != nil {
 		return 0, 0, err
 	}
+	defer d.Close()
 
-	type ratio struct{ num, denom int }
-	ratios := []ratio{
-		{1, 1}, {3, 4}, {2, 3}, {1, 2}, {3, 8}, {1, 4}, {1, 8},
+	returnCode := C.tjDecompressHeader3(
+		d.handle,
+		(*C.uchar)(unsafe.Pointer(&jpegData[0])),
+		C.ulong(len(jpegData)),
+		&imgWidth,
+		&imgHeight,
+		&subsamp,
+		&colorspace,
+	)
+	if returnCode != 0 {
+		return 0, 0, fmt.Errorf("could not read jpeg header: %s", C.GoString(C.tjGetErrorStr()))
 	}
 
+	var numFactors C.int
+	factors := C.tjGetScalingFactors(&numFactors)
+	if factors == nil {
+		return 0, 0, fmt.Errorf("could not get scaling factors")
+	}
+	factorSlice := unsafe.Slice(factors, int(numFactors))
+
 	bestDist := math.MaxInt32
-	for _, r := range ratios {
-		w := cfg.Width * r.num / r.denom
-		h := cfg.Height * r.num / r.denom
-		dist := dist(wantW, w, wantH, h)
-		if dist < bestDist {
-			bestDist = dist
-			actualW, actualH = w, h
-		} else if dist == bestDist && w*h > actualW*actualH {
-			actualW, actualH = w, h
+	for i := 0; i < int(numFactors); i++ {
+		f := factorSlice[i]
+		num, denom := int(f.num), int(f.denom)
+		if num > denom {
+			continue // upscaling only
+		}
+
+		w := int(C.go_tjscaled(C.int(imgWidth), C.int(num), C.int(denom)))
+		h := int(C.go_tjscaled(C.int(imgHeight), C.int(num), C.int(denom)))
+		we, he := w & ^1, h & ^1
+
+		d := dist(wantW, we, wantH, he)
+		if d < bestDist {
+			bestDist = d
+			actualW, actualH = we, he
+		} else if d == bestDist && we*he > actualW*actualH {
+			actualW, actualH = we, he
 		}
 	}
 	return actualW, actualH, nil

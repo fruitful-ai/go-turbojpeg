@@ -83,6 +83,49 @@ func TestSuggestScaling(t *testing.T) {
 	require.Equal(t, height, 480/8)
 }
 
+func TestSuggestScaling_MustMatchTjscaled(t *testing.T) {
+	// Dimensions where Go truncation differs from TJSCALED ceiling.
+	// The old code used go truncation (w * num / denom) which
+	// can differ from TJSCALED by 1+ pixel, causing the buffer
+	// layout to mismatch what tjDecompressToYUV2 actually produces.
+	w, h := 2341, 63
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for x := range w {
+		for y := range h {
+			img.Set(x, y, color.RGBA{
+				uint8(x % 255), uint8(y % 255), uint8((x + y) % 255), 255,
+			})
+		}
+	}
+	var buf bytes.Buffer
+	err := jpeg.Encode(&buf, img, nil)
+	require.NoError(t, err)
+
+	// For 2341×63 with target 640×480:
+	//   3/8 = 877 → TJSCALED = 878 → still the closest supported
+	//   1/4 = 585 → TJSCALED = 586
+	// Manhattan distance picks 1/4 (586×16 is closer than 878×24)
+	suggestedW, suggestedH, err := SuggestScaling(buf.Bytes(), 640, 480, Manhattan)
+	require.NoError(t, err)
+
+	// Must use TJSCALED ceiling matching libjpeg-turbo
+	require.Equal(t, 586, suggestedW, "must use TJSCALED ceiling, not truncation")
+	require.Equal(t, 16, suggestedH, "must use TJSCALED ceiling, not truncation")
+
+	// 4:2:0 chroma planes need even dimensions
+	require.True(t, suggestedW%2 == 0, "width must be even for 4:2:0")
+	require.True(t, suggestedH%2 == 0, "height must be even for 4:2:0")
+
+	// Verify decompression produces correctly-sized YUV
+	d, err := New()
+	require.NoError(t, err)
+	defer d.Close()
+
+	yuv, err := d.DecompressJpegToYuv(buf.Bytes(), suggestedW, suggestedH)
+	require.NoError(t, err)
+	require.Equal(t, suggestedW*suggestedH*3/2, len(yuv))
+}
+
 func TestDecompressYuv_Grayscale(t *testing.T) {
 	gray := image.NewGray(image.Rect(0, 0, 64, 64))
 	for x := range 64 {
