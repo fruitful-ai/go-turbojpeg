@@ -31,6 +31,7 @@ func New() (*Decompressor, error) {
 }
 
 func (d *Decompressor) DecompressJpegToYuv(jpegData []byte, dstWidth, dstHeight int) ([]byte, error) {
+	align := 16
 	var imgWidth, imgHeight, subsamp, colorspace C.int
 	returnCode := C.tjDecompressHeader3(
 		d.handle,
@@ -46,7 +47,7 @@ func (d *Decompressor) DecompressJpegToYuv(jpegData []byte, dstWidth, dstHeight 
 		return nil, fmt.Errorf("could not read jpeg header: %s", errStr)
 	}
 
-	bufSize := C.tjBufSizeYUV2(C.int(dstWidth), 1, C.int(dstHeight), subsamp)
+	bufSize := C.tjBufSizeYUV2(C.int(dstWidth), C.int(align), C.int(dstHeight), subsamp)
 	if bufSize == 0 {
 		errStr := C.GoString(C.tjGetErrorStr())
 		return nil, fmt.Errorf("could not compute yuv buffer size: %s", errStr)
@@ -59,7 +60,7 @@ func (d *Decompressor) DecompressJpegToYuv(jpegData []byte, dstWidth, dstHeight 
 		C.ulong(len(jpegData)),
 		(*C.uchar)(unsafe.Pointer(&buf[0])),
 		C.int(dstWidth),
-		1,
+		C.int(align),
 		C.int(dstHeight),
 		C.TJFLAG_FASTDCT,
 	)
