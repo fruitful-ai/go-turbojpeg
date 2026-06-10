@@ -5,6 +5,7 @@ import (
 	"image"
 	"image/color"
 	"image/jpeg"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -112,7 +113,7 @@ func TestSuggestScaling_MustMatchTjscaled(t *testing.T) {
 	require.Equal(t, 586, suggestedW, "must use TJSCALED ceiling, not truncation")
 	require.Equal(t, 16, suggestedH, "must use TJSCALED ceiling, not truncation")
 
-	// 4:2:0 chroma planes need even dimensions
+	// Ceil-to-even ensures 4:2:0 chroma planes are sized correctly
 	require.True(t, suggestedW%2 == 0, "width must be even for 4:2:0")
 	require.True(t, suggestedH%2 == 0, "height must be even for 4:2:0")
 
@@ -214,5 +215,45 @@ func TestDecompressRGB(t *testing.T) {
 	// Alpha should always be 255 (TJPF_RGBA fills it)
 	for i := 3; i < len(result); i += 4 {
 		require.Equal(t, uint8(255), result[i], "alpha at pixel %d", i/4)
+	}
+}
+
+func TestNoDirstortionOnDecompress(t *testing.T) {
+	w, h := 2401, 153
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for x := range w {
+		for y := range h / 2 {
+			img.Set(x, y, color.RGBA{G: 255, A: 255})
+		}
+	}
+
+	var buf bytes.Buffer
+	err := jpeg.Encode(&buf, img, nil)
+	require.NoError(t, err)
+
+	jpegBytes := buf.Bytes()
+	width, height, err := SuggestScaling(jpegBytes, 640, 240, Manhattan)
+	require.NoError(t, err)
+	require.Equal(t, 602, width)
+	require.Equal(t, 40, height)
+
+	decompressor, err := New()
+	require.NoError(t, err)
+
+	yuvBytes, err := decompressor.DecompressJpegToYuv(jpegBytes, width, height)
+
+	saveImage := false
+	if saveImage {
+		f, err := os.Create("decompressed.yuv")
+		defer f.Close()
+		require.NoError(t, err)
+		_, err = f.Write(yuvBytes)
+		require.NoError(t, err)
+
+		fOrig, err := os.Create("orig.jpg")
+		require.NoError(t, err)
+		defer fOrig.Close()
+		_, err = fOrig.Write(jpegBytes)
+		require.NoError(t, err)
 	}
 }

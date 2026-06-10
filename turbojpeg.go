@@ -143,7 +143,7 @@ func SuggestScaling(jpegData []byte, wantW, wantH int, dist DistanceFuncInt) (ac
 
 		w := int(C.go_tjscaled(C.int(imgWidth), C.int(num), C.int(denom)))
 		h := int(C.go_tjscaled(C.int(imgHeight), C.int(num), C.int(denom)))
-		we, he := w & ^1, h & ^1
+		we, he := (w+1)&^1, (h+1)&^1
 
 		d := dist(wantW, we, wantH, he)
 		if d < bestDist {
